@@ -10,7 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"net/url"
+	"os"
 	"strings"
 
 	"github.com/hay-kot/httpkit/errchain"
@@ -20,16 +20,9 @@ import (
 	"github.com/sysadminsmedia/homebox/backend/internal/sys/validate"
 )
 
-const (
-	// maxSpeechUploadBytes caps a single voice clip upload. Voice captures
-	// are short push-to-talk clips; 15 MB fits several minutes of 48 kHz
-	// Opus while keeping the proxy from buffering unbounded bodies.
-	maxSpeechUploadBytes = 15 << 20
-
-	// speechProviderErrorBodyLimit bounds how much of a provider error
-	// response is read for logging.
-	speechProviderErrorBodyLimit = 4 << 10
-)
+// speechProviderErrorBodyLimit bounds how much of a provider error response
+// is read for logging.
+const speechProviderErrorBodyLimit = 4 << 10
 
 // SpeechTranscription is the transcription proxy response.
 type SpeechTranscription struct {
@@ -49,8 +42,9 @@ type SpeechTranscription struct {
 //	@Security	Bearer
 func (ctrl *V1Controller) HandleSpeechTranscribe(conf config.SpeechConf) errchain.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		r.Body = http.MaxBytesReader(w, r.Body, maxSpeechUploadBytes)
-
+		// Upload size is bounded by the global MaxBodySizeByPath middleware
+		// (web.max_file_upload), which is ample for push-to-talk clips —
+		// a 60 s Opus capture is well under 1 MB.
 		if err := r.ParseMultipartForm(ctrl.maxParseMemory << 20); err != nil {
 			log.Err(err).Msg("failed to parse transcription multipart form")
 			return multipartFormError(err)
@@ -68,6 +62,15 @@ func (ctrl *V1Controller) HandleSpeechTranscribe(conf config.SpeechConf) errchai
 
 		result, err := transcribeAudio(r.Context(), conf, file, header.Filename, header.Header.Get("Content-Type"))
 		if err != nil {
+			// The client hung up mid-request (navigated away during a
+			// push-to-talk upload). Routine, not an error worth logging.
+			if r.Context().Err() != nil {
+				return nil
+			}
+			if errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err) {
+				log.Warn().Err(err).Msg("transcription provider timed out")
+				return validate.NewRequestError(errors.New("transcription provider timed out"), http.StatusGatewayTimeout)
+			}
 			log.Err(err).Msg("transcription provider request failed")
 			return validate.NewRequestError(errors.New("transcription provider request failed"), http.StatusBadGateway)
 		}
@@ -80,7 +83,7 @@ func (ctrl *V1Controller) HandleSpeechTranscribe(conf config.SpeechConf) errchai
 // `/audio/transcriptions` endpoint and returns the transcription. The
 // provider API key never leaves the server.
 func transcribeAudio(ctx context.Context, conf config.SpeechConf, audio io.Reader, filename, contentType string) (SpeechTranscription, error) {
-	endpoint, err := speechEndpointURL(conf.BaseURL)
+	endpoint, err := conf.EndpointURL()
 	if err != nil {
 		return SpeechTranscription{}, err
 	}
@@ -142,28 +145,18 @@ func transcribeAudio(ctx context.Context, conf config.SpeechConf, audio io.Reade
 	return result, nil
 }
 
-// speechEndpointURL validates the configured base URL and appends the
-// OpenAI-compatible transcription path.
-func speechEndpointURL(baseURL string) (string, error) {
-	u, err := url.Parse(strings.TrimSuffix(baseURL, "/"))
-	if err != nil {
-		return "", fmt.Errorf("invalid speech base_url: %w", err)
-	}
-	// Plain http stays allowed on purpose: an OpenAI-compatible server on a
-	// private network (or a local gateway) commonly has no TLS.
-	if u.Scheme != "http" && u.Scheme != schemeHTTPS {
-		return "", fmt.Errorf("speech base_url must use http or https, got %q", u.Scheme)
-	}
-	if u.Host == "" {
-		return "", errors.New("speech base_url is missing a host")
-	}
-	return u.String() + "/audio/transcriptions", nil
-}
+// speechFilenameSanitizer strips CR/LF from the client-supplied filename.
+// Go's multipart writer escapes quotes but not control characters, and an
+// RFC 2231 `filename*` part can smuggle CRLF through percent-decoding —
+// enough to inject headers into the request sent to the provider.
+var speechFilenameSanitizer = strings.NewReplacer("\r", "", "\n", "")
 
 // createSpeechFilePart adds the audio file part, preserving the client's
 // content type when known — some providers use it to pick a decoder (iOS
 // Safari records audio/mp4, most other browsers audio/webm).
 func createSpeechFilePart(form *multipart.Writer, filename, contentType string) (io.Writer, error) {
+	filename = speechFilenameSanitizer.Replace(filename)
+
 	if contentType == "" {
 		return form.CreateFormFile("file", filename)
 	}

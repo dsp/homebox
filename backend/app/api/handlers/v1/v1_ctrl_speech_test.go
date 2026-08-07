@@ -132,24 +132,40 @@ func TestTranscribeAudioProviderError(t *testing.T) {
 	}
 }
 
-func TestSpeechEndpointURLRejectsBadSchemes(t *testing.T) {
-	cases := []string{
-		"ftp://example.com/v1",
-		"file:///etc/passwd",
-		"not a url at all\x7f",
-		"/relative/only",
-	}
-	for _, c := range cases {
-		if _, err := speechEndpointURL(c); err == nil {
-			t.Errorf("expected error for base URL %q", c)
-		}
-	}
+func TestTranscribeAudioSanitizesFilename(t *testing.T) {
+	var gotFilename string
 
-	got, err := speechEndpointURL("https://api.mistral.ai/v1")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("provider failed to parse multipart form: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			t.Errorf("provider missing file part: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer func() { _ = file.Close() }()
+		gotFilename = header.Filename
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"ok"}`))
+	}))
+	defer srv.Close()
+
+	// An RFC 2231 filename* can smuggle CRLF through percent-decoding; the
+	// proxy must strip it before the name reaches the outgoing part header,
+	// on the no-content-type (CreateFormFile) branch as well.
+	_, err := transcribeAudio(context.Background(), speechTestConf(srv.URL),
+		strings.NewReader("x"), "clip\r\nX-Injected: yes.webm", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "https://api.mistral.ai/v1/audio/transcriptions" {
-		t.Errorf("unexpected endpoint URL %q", got)
+	if strings.ContainsAny(gotFilename, "\r\n") {
+		t.Errorf("expected CR/LF stripped from forwarded filename, got %q", gotFilename)
+	}
+	if gotFilename != "clipX-Injected: yes.webm" {
+		t.Errorf("unexpected sanitized filename %q", gotFilename)
 	}
 }

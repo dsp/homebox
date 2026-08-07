@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
@@ -169,9 +170,39 @@ type SpeechConf struct {
 
 // Enabled reports whether the transcription proxy should be mounted. An API
 // key is deliberately not required: OpenAI-compatible servers on a private
-// network may run without authentication.
+// network may run without authentication. A configured-but-invalid base URL
+// counts as disabled so /v1/status never advertises a feature that cannot
+// work — mountRoutes logs the reason at startup.
 func (c SpeechConf) Enabled() bool {
-	return c.BaseURL != "" && c.Model != ""
+	if c.BaseURL == "" || c.Model == "" {
+		return false
+	}
+	_, err := c.EndpointURL()
+	return err == nil
+}
+
+// EndpointURL validates the configured base URL and returns the full
+// OpenAI-compatible transcription endpoint. Validation lives here, next to
+// the config, so it can run once at startup instead of failing per request.
+func (c SpeechConf) EndpointURL() (string, error) {
+	u, err := url.Parse(strings.TrimRight(c.BaseURL, "/"))
+	if err != nil {
+		return "", fmt.Errorf("invalid speech base_url: %w", err)
+	}
+	// Plain http stays allowed on purpose: an OpenAI-compatible server on a
+	// private network (or a local gateway) commonly has no TLS.
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("speech base_url must use http or https, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return "", errors.New("speech base_url is missing a host")
+	}
+	// Naive string concatenation would splice the path into the query, so a
+	// query or fragment silently misroutes every request. Reject instead.
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", errors.New("speech base_url must not contain a query string or fragment")
+	}
+	return u.JoinPath("audio", "transcriptions").String(), nil
 }
 
 func (c SpeechConf) MarshalJSON() ([]byte, error) {
@@ -180,6 +211,7 @@ func (c SpeechConf) MarshalJSON() ([]byte, error) {
 	if a.APIKey != "" {
 		a.APIKey = redactedValue
 	}
+	a.BaseURL = redactURLUserinfo(a.BaseURL)
 	return json.Marshal(a)
 }
 

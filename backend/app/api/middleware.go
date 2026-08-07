@@ -740,6 +740,34 @@ func (rl *simpleRateLimiter) getClientIP(r *http.Request, trustProxy bool) strin
 	return extractClientIP(r, trustProxy)
 }
 
+// middlewareByUser is like middleware but buckets by the authenticated user
+// instead of the client IP. Use it for endpoints whose cost is per-request
+// (e.g. metered third-party API calls): behind a reverse proxy without
+// trust_proxy every client shares the proxy's IP so one bucket throttles the
+// whole instance, and with trust_proxy the forwarded header is
+// caller-controlled and trivially rotated — neither is a sound key for a
+// cost-bearing limit. Falls back to the client IP when no user is on the
+// context (mount after mwAuthToken so that does not normally happen).
+func (rl *simpleRateLimiter) middlewareByUser(next errchain.Handler) errchain.Handler {
+	return errchain.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		usr := services.UseUserCtx(r.Context())
+
+		var key string
+		if usr != nil && usr.ID != uuid.Nil {
+			key = "user|" + usr.ID.String()
+		} else {
+			key = rl.getClientIP(r, rl.trustProxy)
+		}
+
+		if !rl.allow(key) {
+			w.Header().Set("Retry-After", strconv.Itoa(int(rl.window.Seconds())))
+			return validate.NewRequestError(errors.New("rate limit exceeded"), http.StatusTooManyRequests)
+		}
+
+		return next.ServeHTTP(w, r)
+	})
+}
+
 // middleware wraps the rate limiter as an errchain middleware.
 func (rl *simpleRateLimiter) middleware(next errchain.Handler) errchain.Handler {
 	return errchain.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
