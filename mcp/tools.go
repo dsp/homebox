@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -155,21 +157,33 @@ func (s *toolServer) resolveItem(ctx context.Context, ref string) (entitySummary
 			}
 			names = append(names, label)
 		}
-		return entitySummary{}, fmt.Errorf("item %q is ambiguous, ask the user which one they mean: %s",
-			ref, joinCandidates(names))
+		msg := fmt.Sprintf("item %q is ambiguous, ask the user which one they mean: %s", ref, joinCandidates(names))
+		// The candidate list only covers one search page; say so instead of
+		// implying the "… and N more" count is exhaustive.
+		if len(candidates) == len(result.Items) && result.Total > len(result.Items) {
+			msg += fmt.Sprintf(" (%d total matches — a more specific name may help)", result.Total)
+		}
+		return entitySummary{}, errors.New(msg)
 	}
 }
 
-func (s *toolServer) pathString(ctx context.Context, id string) string {
+// locationPath returns the item's location as a breadcrumb path. The
+// backend's /path endpoint includes the entity itself as the last segment,
+// which must be dropped — otherwise "where is my passport?" answers
+// "Office › Desk › Passport". Empty means the item has no parent.
+func (s *toolServer) locationPath(ctx context.Context, id string) (string, error) {
 	segments, err := s.hb.entityPath(ctx, id)
-	if err != nil || len(segments) == 0 {
-		return ""
+	if err != nil {
+		return "", err
+	}
+	if len(segments) > 0 {
+		segments = segments[:len(segments)-1]
 	}
 	names := make([]string, 0, len(segments))
 	for _, seg := range segments {
 		names = append(names, seg.Name)
 	}
-	return strings.Join(names, pathSeparator)
+	return strings.Join(names, pathSeparator), nil
 }
 
 // --- tool inputs/outputs -----------------------------------------------------
@@ -218,7 +232,7 @@ func (s *toolServer) searchItems(ctx context.Context, _ *mcp.CallToolRequest, in
 		}
 		out.Items = append(out.Items, mapped)
 
-		line := fmt.Sprintf("%s (qty %g)", item.Name, item.Quantity)
+		line := fmt.Sprintf("%s (qty %s)", item.Name, formatQuantity(item.Quantity))
 		if mapped.Location != "" {
 			line += " — " + mapped.Location
 		}
@@ -241,14 +255,22 @@ func (s *toolServer) getItem(ctx context.Context, _ *mcp.CallToolRequest, in ite
 		return nil, itemResult{}, err
 	}
 
+	location, err := s.locationPath(ctx, item.ID)
+	if err != nil {
+		return nil, itemResult{}, fmt.Errorf("found %q but failed to resolve its location: %w", item.Name, err)
+	}
+
 	out := itemResult{
 		ID:          item.ID,
 		Name:        item.Name,
 		Description: item.Description,
 		Quantity:    item.Quantity,
-		Location:    s.pathString(ctx, item.ID),
+		Location:    location,
 	}
-	return textResult("%s — quantity %g, located in %s. %s", out.Name, out.Quantity, orUnknown(out.Location), out.Description), out, nil
+	if out.Location == "" {
+		return textResult("%s — quantity %s, no recorded location. %s", out.Name, formatQuantity(out.Quantity), out.Description), out, nil
+	}
+	return textResult("%s — quantity %s, located in %s. %s", out.Name, formatQuantity(out.Quantity), out.Location, out.Description), out, nil
 }
 
 func (s *toolServer) whereIs(ctx context.Context, _ *mcp.CallToolRequest, in itemRefInput) (*mcp.CallToolResult, itemResult, error) {
@@ -257,7 +279,12 @@ func (s *toolServer) whereIs(ctx context.Context, _ *mcp.CallToolRequest, in ite
 		return nil, itemResult{}, err
 	}
 
-	out := itemResult{ID: item.ID, Name: item.Name, Quantity: item.Quantity, Location: s.pathString(ctx, item.ID)}
+	location, err := s.locationPath(ctx, item.ID)
+	if err != nil {
+		return nil, itemResult{}, fmt.Errorf("found %q but failed to resolve its location: %w", item.Name, err)
+	}
+
+	out := itemResult{ID: item.ID, Name: item.Name, Quantity: item.Quantity, Location: location}
 	if out.Location == "" {
 		return textResult("%s has no recorded location.", out.Name), out, nil
 	}
@@ -308,9 +335,9 @@ func (s *toolServer) createItem(ctx context.Context, _ *mcp.CallToolRequest, in 
 		Location:    locationPath,
 	}
 	if locationPath == "" {
-		return textResult("Created %q (quantity %g).", out.Name, out.Quantity), out, nil
+		return textResult("Created %q (quantity %s).", out.Name, formatQuantity(out.Quantity)), out, nil
 	}
-	return textResult("Created %q (quantity %g) in %s.", out.Name, out.Quantity, locationPath), out, nil
+	return textResult("Created %q (quantity %s) in %s.", out.Name, formatQuantity(out.Quantity), locationPath), out, nil
 }
 
 type setQuantityInput struct {
@@ -335,7 +362,7 @@ func (s *toolServer) setQuantity(ctx context.Context, _ *mcp.CallToolRequest, in
 	}
 
 	out := itemResult{ID: updated.ID, Name: updated.Name, Quantity: updated.Quantity}
-	return textResult("%s now has quantity %g.", out.Name, out.Quantity), out, nil
+	return textResult("%s now has quantity %s.", out.Name, formatQuantity(out.Quantity)), out, nil
 }
 
 type moveItemInput struct {
@@ -393,9 +420,9 @@ func (s *toolServer) listLocations(ctx context.Context, _ *mcp.CallToolRequest, 
 	return textResult("Locations:\n%s", strings.Join(paths, "\n")), out, nil
 }
 
-func orUnknown(s string) string {
-	if s == "" {
-		return "an unknown location"
-	}
-	return s
+// formatQuantity renders quantities in plain decimal notation — %g switches
+// to scientific notation for large values, which voice clients read out as
+// "one E plus zero six".
+func formatQuantity(q float64) string {
+	return strconv.FormatFloat(q, 'f', -1, 64)
 }

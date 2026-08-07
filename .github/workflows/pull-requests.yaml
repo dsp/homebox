@@ -15,8 +15,10 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - 'mcp/**'
       - '.github/workflows/partial-backend.yaml'
       - '.github/workflows/partial-frontend.yaml'
+      - '.github/workflows/partial-mcp.yaml'
       - '.github/workflows/e2e-partial.yaml'
       - '.github/workflows/pull-requests.yaml'
 
@@ -28,6 +30,10 @@ jobs:
   frontend-tests:
     name: "Frontend Tests"
     uses: ./.github/workflows/partial-frontend.yaml
+
+  mcp-tests:
+    name: "MCP Server Tests"
+    uses: ./.github/workflows/partial-mcp.yaml
 
   e2e-tests:
     name: "End-to-End Playwright Tests"

@@ -45,7 +45,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	handler := newHandler(newMCPServer(hb, readonly), os.Getenv("HOMEBOX_API_KEY"))
+	fallbackKey := os.Getenv("HOMEBOX_API_KEY")
+	if fallbackKey != "" {
+		log.Print("WARNING: HOMEBOX_API_KEY is set — requests without an Authorization header are accepted and act as that key's user. Only bind to localhost or a trusted network in this mode.")
+	}
+
+	handler := newHandler(newMCPServer(hb, readonly), fallbackKey)
 
 	srv := &http.Server{
 		Addr:              listen,

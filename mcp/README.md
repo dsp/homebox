@@ -52,9 +52,11 @@ every MCP request:
 Authorization: Bearer hbox_...
 ```
 
-Requests without a key get `401` (unless `HOMEBOX_API_KEY` is set as a
-server-wide fallback — avoid that in multi-user setups, since every caller
-would act as that one user).
+Requests without a key get `401`. Setting `HOMEBOX_API_KEY` as a server-wide
+fallback **disables MCP-side authentication**: any request that reaches the
+port gets full read/write access as that key's user. Use it only for
+single-user setups where `:7746` is bound to localhost or a trusted network,
+and never in multi-user setups.
 
 ### Client examples
 
@@ -101,15 +103,20 @@ Smoke test with curl:
 ```bash
 curl -s http://localhost:7746/ \
   -H "Authorization: Bearer hbox_..." \
-  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
 ```
+
+(The `Accept` header must list both types — the streamable transport rejects
+requests that only accept JSON.)
 
 ## Notes
 
 - **Stateless by design**: no `Mcp-Session-Id`, every POST self-contained;
-  GET/DELETE return 405. This matches the sessionless direction of the MCP
-  spec (SEP-2567) and makes the server safe to run behind any load balancer.
+  authenticated GET/DELETE return 405 (unauthenticated requests get 401
+  first). This matches the sessionless direction of the MCP spec (SEP-2567)
+  and makes the server safe to run behind any load balancer.
 - The server needs network reach to `HOMEBOX_URL` only. Run it next to
   HomeBox (same compose file/network) and expose `:7746` however you expose
   HomeBox itself. Use HTTPS via your reverse proxy if the key crosses

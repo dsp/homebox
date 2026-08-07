@@ -105,7 +105,16 @@ func (e *apiError) Error() string {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return "HomeBox rejected the API key; check the Authorization header (expects a HomeBox API key, e.g. hbox_...)"
 	default:
-		return fmt.Sprintf("HomeBox API returned status %d", e.Status)
+		// Pass validation detail through — "status 422" alone sends the
+		// calling model into a retry loop with the same bad payload.
+		detail := strings.TrimSpace(e.Body)
+		if len(detail) > 300 {
+			detail = detail[:300] + "…"
+		}
+		if detail == "" {
+			return fmt.Sprintf("HomeBox API returned status %d", e.Status)
+		}
+		return fmt.Sprintf("HomeBox API returned status %d: %s", e.Status, detail)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -16,10 +17,10 @@ const testAPIKey = "hbox_test_key"
 
 // mockHomebox fakes the slice of the HomeBox REST API the tools use.
 // Every handler asserts the caller's API key was forwarded.
-func mockHomebox(t *testing.T) (*httptest.Server, *[]map[string]any) {
+func mockHomebox(t *testing.T) (*httptest.Server, *createLog) {
 	t.Helper()
 
-	var createdBodies []map[string]any
+	created := &createLog{}
 
 	shelfA := "11111111-1111-1111-1111-111111111111"
 	shelfB := "22222222-2222-2222-2222-222222222222"
@@ -80,7 +81,7 @@ func mockHomebox(t *testing.T) (*httptest.Server, *[]map[string]any) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		createdBodies = append(createdBodies, body)
+		created.add(body)
 		w.WriteHeader(http.StatusCreated)
 		_, _ = fmt.Fprintf(w, `{"id":"66666666-6666-6666-6666-666666666666","name":%q,"quantity":%v}`,
 			body["name"], body["quantity"])
@@ -100,7 +101,26 @@ func mockHomebox(t *testing.T) (*httptest.Server, *[]map[string]any) {
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv, &createdBodies
+	return srv, created
+}
+
+// createLog records create-request bodies; the httptest handler goroutine
+// writes while test goroutines read, so access is mutex-guarded.
+type createLog struct {
+	mu     sync.Mutex
+	bodies []map[string]any
+}
+
+func (c *createLog) add(body map[string]any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bodies = append(c.bodies, body)
+}
+
+func (c *createLog) all() []map[string]any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]map[string]any(nil), c.bodies...)
 }
 
 type authTransport struct {
@@ -131,7 +151,7 @@ func connect(t *testing.T, endpoint, token string) *mcp.ClientSession {
 	return session
 }
 
-func startMCP(t *testing.T, readonly bool) (endpoint string, created *[]map[string]any) {
+func startMCP(t *testing.T, readonly bool) (endpoint string, created *createLog) {
 	t.Helper()
 
 	hbSrv, createdBodies := mockHomebox(t)
@@ -209,8 +229,10 @@ func TestWhereIsResolvesPath(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("unexpected tool error: %s", resultText(result))
 	}
-	if text := resultText(result); !strings.Contains(text, "Garage › Shelf B") {
-		t.Errorf("expected full path in response, got %q", text)
+	// Exact match: the /path response includes the item itself as its last
+	// segment, which must not leak into the spoken location.
+	if text := resultText(result); text != "DeWalt drill is in Garage › Shelf B." {
+		t.Errorf("expected exact location sentence, got %q", text)
 	}
 }
 
@@ -230,10 +252,11 @@ func TestCreateItemResolvesLocation(t *testing.T) {
 		t.Errorf("expected confirmation with path, got %q", text)
 	}
 
-	if len(*created) != 1 {
-		t.Fatalf("expected one create call, got %d", len(*created))
+	bodies := created.all()
+	if len(bodies) != 1 {
+		t.Fatalf("expected one create call, got %d", len(bodies))
 	}
-	body := (*created)[0]
+	body := bodies[0]
 	if body["parentId"] != "22222222-2222-2222-2222-222222222222" {
 		t.Errorf("expected parentId of Shelf B, got %v", body["parentId"])
 	}
@@ -257,8 +280,8 @@ func TestCreateItemAmbiguousLocation(t *testing.T) {
 	if !strings.Contains(text, "Shelf A") || !strings.Contains(text, "Shelf B") {
 		t.Errorf("expected candidates in error, got %q", text)
 	}
-	if len(*created) != 0 {
-		t.Errorf("no create call should happen on ambiguity, got %d", len(*created))
+	if got := created.all(); len(got) != 0 {
+		t.Errorf("no create call should happen on ambiguity, got %d", len(got))
 	}
 }
 
