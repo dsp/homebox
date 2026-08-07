@@ -6,6 +6,33 @@ server so HomeBox can be driven from any voice-capable MCP client.*
 
 ---
 
+## Implementation status (updated 2026-08-07)
+
+Both work streams from this document have first implementations up as PRs:
+
+| PR | Branch | What shipped |
+|---|---|---|
+| [#1](https://github.com/dsp/homebox/pull/1) | `claude/voice-01-backend-transcribe` | `HBOX_SPEECH_*` config + `POST /api/v1/actions/transcribe` proxy (OpenAI-compatible providers: Mistral Voxtral, OpenAI, Groq), rate-limited, `speechToText` in `/v1/status` |
+| [#2](https://github.com/dsp/homebox/pull/2) | `claude/voice-02-frontend-dictation` (stacked on #1) | Push-to-talk dictation: mic button drafts the create form (name → description) and fills item search |
+| [#3](https://github.com/dsp/homebox/pull/3) | `claude/mcp-01-server` | `mcp/` — **standalone** MCP server module (see divergence note below), stateless 2026-07-28 streamable HTTP, HomeBox API-key auth, 7 tools |
+
+Two decisions superseded this document's original recommendations:
+
+1. **Hosted STT API only for v1** — no self-hosted model (§2.1 already
+   updated). The pluggable interface keeps local servers a config-only
+   future option.
+2. **The MCP server shipped standalone, not embedded.** §3.2 below
+   recommends embedding in the HomeBox binary; the built version is instead
+   a self-contained module under `mcp/` that talks to the REST API and
+   forwards the caller's `hbox_` API key per request. That trades in-process
+   repo access for zero coupling: no new dependency in the main binary, no
+   upstream buy-in needed, works against any running instance. Embedding
+   remains an option later if upstream wants it in-tree.
+
+See also the new §3.7 on where the agent loop lives in each approach.
+
+---
+
 ## TL;DR / Recommendation
 
 Do **both, in this order**:
@@ -308,6 +335,39 @@ web UI.
 config flag, and integration tests (the SDK's in-memory transport makes tool
 tests cheap). Docs page ("connect HomeBox to Claude / Home Assistant /
 ChatGPT") is half the value — budget a day for it.
+
+### 3.7 Where does the agent loop live?
+
+"Voice changes my inventory" implies an agent loop somewhere: something has
+to hear intent, decide on tool calls, execute them, and handle follow-ups.
+The three tiers place that loop very differently, and only one of them puts
+it in HomeBox:
+
+| Tier | Agent loop / tool calls | Confirmation step |
+|---|---|---|
+| **Dictation (PRs #1+#2, shipped)** | **None.** Deterministic pipeline: mic → STT → text prefills the form or search box. No LLM, no tool calls. | The user reviews the drafted form and clicks Create |
+| **MCP (PR #3, shipped)** | **In the client.** Claude voice mode / ChatGPT / Home Assistant runs the loop: speech → its LLM picks `create_item` / `where_is` / `move_item` → our server executes → the model speaks the result. HomeBox implements *tools*, never the loop | The client's conversation ("which shelf — A or B?"); ambiguity errors from our tools feed exactly that |
+| **In-app voice commands (not built)** | **Would be ours to build**: transcript → one LLM function call against the same action vocabulary as the MCP tools → *proposed* action | The proposal prefills the create/edit UI; the user's confirm click replaces multi-turn repair |
+
+Design notes for the unbuilt third tier, if/when wanted:
+
+- It is a **single-shot function call, not a full loop**. The UI confirm
+  step does the job that multi-turn repair does in a voice assistant, so
+  there's no need for conversation state, retries, or an executor loop in
+  the backend — one `POST /actions/voice-command` that returns a proposed
+  `create_item`-shaped payload (plus resolved location candidates) is
+  enough.
+- **No second provider needed**: Mistral serves both transcription
+  (Voxtral) and small chat models with function calling behind the same
+  API key and OpenAI-compatible interface, so the existing `speech:` config
+  block extends with one `intent_model` field.
+- **Reuse the MCP action vocabulary.** The MCP tools' input schemas and
+  fuzzy location resolution are precisely the "grammar" the LLM should
+  target — keeping the two surfaces identical means one tested behavior
+  for "add X to Y" everywhere.
+- Voxtral Small/Mini (the audio LLM, not the transcribe model) can emit
+  function calls **directly from audio**, collapsing STT + intent into one
+  round trip — a later optimization, at the cost of vendor coupling.
 
 ---
 
