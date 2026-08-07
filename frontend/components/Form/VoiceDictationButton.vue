@@ -29,8 +29,9 @@
   import { toast } from "@/components/ui/sonner";
   import { Button } from "~/components/ui/button";
   import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
-  import { useVoiceDictation } from "~~/composables/use-voice-dictation";
+  import { useVoiceDictation, type VoiceDictationErrorKind } from "~~/composables/use-voice-dictation";
   import { usePublicApi } from "~~/composables/use-api";
+  import type { APISummary } from "~~/lib/api/types/data-contracts";
   import MdiMicrophone from "~icons/mdi/microphone";
   import MdiStop from "~icons/mdi/stop";
   import MdiLoading from "~icons/mdi/loading";
@@ -57,21 +58,31 @@
   const { t } = useI18n();
   const pubApi = usePublicApi();
 
-  // Shared key so any number of dictation buttons resolve one status call.
-  const { data: status } = useAsyncData("api-status-speech", async () => {
-    const { data, error } = await pubApi.status();
-    return error ? null : data;
-  });
+  // App-wide cache: useState survives component unmounts (useAsyncData purges
+  // its cache when the last subscriber unmounts, which would refetch status
+  // on every modal open). Server config rarely changes within a session.
+  const status = useState<APISummary | null>("speech-status", () => null);
+  const statusRequested = useState("speech-status-requested", () => false);
+  if (!statusRequested.value) {
+    statusRequested.value = true;
+    pubApi.status().then(({ data, error }) => {
+      if (!error) {
+        status.value = data;
+      }
+    });
+  }
+
+  const errorToasts: Record<VoiceDictationErrorKind, string> = {
+    permission: "components.form.voice.toast.permission_denied",
+    unavailable: "components.form.voice.toast.mic_unavailable",
+    unsupported: "components.form.voice.toast.mic_unavailable",
+    empty: "components.form.voice.toast.empty_recording",
+    transcribe: "components.form.voice.toast.transcribe_failed",
+  };
 
   const { isSupported, isRecording, isTranscribing, toggle } = useVoiceDictation({
     onText: text => emit("text", text),
-    onError: kind => {
-      if (kind === "permission") {
-        toast.error(t("components.form.voice.toast.permission_denied"));
-      } else {
-        toast.error(t("components.form.voice.toast.transcribe_failed"));
-      }
-    },
+    onError: kind => toast.error(t(errorToasts[kind])),
   });
 
   // Render nothing unless the server can transcribe and the browser can

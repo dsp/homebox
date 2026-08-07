@@ -256,6 +256,7 @@
   import FormTextField from "~/components/Form/TextField.vue";
   import FormTextArea from "~/components/Form/TextArea.vue";
   import VoiceDictationButton from "~/components/Form/VoiceDictationButton.vue";
+  import { truncateUtf8 } from "@/lib/utils";
   import PhotoUploader from "~/components/Form/PhotoUploader.vue";
   import PhotoUploaderPreview from "~/components/Form/PhotoUploaderPreview.vue";
   import {
@@ -745,6 +746,7 @@
 
   // Voice dictation drafts the entry, the user reviews before creating: the
   // first capture fills the empty name, later captures grow the description.
+  // Truncation is by UTF-8 bytes to match the backend's MaxLen validation.
   function applyDictation(text: string) {
     const trimmed = text.trim();
     if (!trimmed) {
@@ -752,10 +754,10 @@
     }
 
     if (!form.name.trim()) {
-      form.name = trimmed.slice(0, 255);
+      form.name = truncateUtf8(trimmed, 255);
       return;
     }
 
-    form.description = (form.description ? `${form.description.trimEnd()}\n${trimmed}` : trimmed).slice(0, 1000);
+    form.description = truncateUtf8(form.description ? `${form.description.trimEnd()}\n${trimmed}` : trimmed, 1000);
   }
 </script>
