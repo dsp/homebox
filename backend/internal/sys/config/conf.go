@@ -62,6 +62,7 @@ type Config struct {
 	Otel       OTelConfig     `yaml:"otel"`
 	Auth       AuthConfig     `yaml:"auth"`
 	Notifier   NotifierConf   `yaml:"notifier"`
+	Speech     SpeechConf     `yaml:"speech"`
 }
 
 type Options struct {
@@ -144,6 +145,40 @@ func (c OIDCConf) MarshalJSON() ([]byte, error) {
 	a := alias(c)
 	if a.ClientSecret != "" {
 		a.ClientSecret = redactedValue
+	}
+	return json.Marshal(a)
+}
+
+// SpeechConf configures the hosted speech-to-text provider behind the voice
+// input feature. Any provider exposing an OpenAI-compatible
+// `/audio/transcriptions` endpoint works (Mistral/Voxtral, OpenAI, Groq).
+// The feature is off unless both base_url and model are set.
+type SpeechConf struct {
+	// BaseURL is the provider's API root, e.g. https://api.mistral.ai/v1.
+	// The `/audio/transcriptions` path is appended by the server.
+	BaseURL string `yaml:"base_url"`
+	// Model is the provider's transcription model identifier, e.g.
+	// voxtral-mini-transcribe or whisper-1.
+	Model  string `yaml:"model"`
+	APIKey string `yaml:"api_key" conf:"mask"`
+	// Language optionally pins transcription to an ISO-639-1 code. Leave
+	// empty to let the model auto-detect.
+	Language string        `yaml:"language"`
+	Timeout  time.Duration `yaml:"timeout"  conf:"default:30s"`
+}
+
+// Enabled reports whether the transcription proxy should be mounted. An API
+// key is deliberately not required: OpenAI-compatible servers on a private
+// network may run without authentication.
+func (c SpeechConf) Enabled() bool {
+	return c.BaseURL != "" && c.Model != ""
+}
+
+func (c SpeechConf) MarshalJSON() ([]byte, error) {
+	type alias SpeechConf
+	a := alias(c)
+	if a.APIKey != "" {
+		a.APIKey = redactedValue
 	}
 	return json.Marshal(a)
 }

@@ -114,6 +114,61 @@
                 }
             }
         },
+        "/v1/actions/transcribe": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Actions"
+                ],
+                "summary": "Transcribe an audio clip to text",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "description": "Audio clip to transcribe",
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "required": [
+                                    "file"
+                                ]
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/v1.SpeechTranscription"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/validate.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/actions/wipe-inventory": {
             "post": {
                 "security": [
@@ -6599,6 +6654,9 @@
                     "oidc": {
                         "$ref": "#/components/schemas/v1.OIDCStatus"
                     },
+                    "speechToText": {
+                        "type": "boolean"
+                    },
                     "telemetry": {
                         "$ref": "#/components/schemas/v1.TelemetryStatus"
                     },
@@ -6805,6 +6863,14 @@
                         "items": {
                             "$ref": "#/components/schemas/repo.ExportOut"
                         }
+                    }
+                }
+            },
+            "v1.SpeechTranscription": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string"
                     }
                 }
             },

@@ -1332,6 +1332,7 @@ export interface APISummary {
   latest: Latest;
   message: string;
   oidc: OIDCStatus;
+  speechToText: boolean;
   telemetry: TelemetryStatus;
   title: string;
   versions: string[];
@@ -1424,6 +1425,10 @@ export interface ResetPasswordRequest {
 
 export interface ResultsRepoExportOut {
   items: ExportOut[];
+}
+
+export interface SpeechTranscription {
+  text: string;
 }
 
 export interface TelemetryStatus {

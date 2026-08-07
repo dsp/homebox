@@ -128,6 +128,7 @@ type (
 		Demo              bool            `json:"demo"`
 		AllowRegistration bool            `json:"allowRegistration"`
 		LabelPrinting     bool            `json:"labelPrinting"`
+		SpeechToText      bool            `json:"speechToText"`
 		OIDC              OIDCStatus      `json:"oidc"`
 		Telemetry         TelemetryStatus `json:"telemetry"`
 	}
@@ -192,6 +193,7 @@ func (ctrl *V1Controller) HandleBase(ready ReadyFunc, build Build) errchain.Hand
 			Demo:              ctrl.isDemo,
 			AllowRegistration: ctrl.allowRegistration,
 			LabelPrinting:     ctrl.config.LabelMaker.PrintCommand != nil,
+			SpeechToText:      ctrl.config.Speech.Enabled(),
 			OIDC: OIDCStatus{
 				Enabled:      ctrl.config.OIDC.Enabled,
 				ButtonText:   ctrl.config.OIDC.ButtonText,

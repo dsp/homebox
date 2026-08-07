@@ -21,6 +21,7 @@ type app struct {
 	bus                 *eventbus.EventBus
 	authLimiter         *authRateLimiter
 	notifierTestLimiter *simpleRateLimiter
+	speechLimiter       *simpleRateLimiter
 	otel                *otel.Provider
 }
 
@@ -39,6 +40,7 @@ func new(conf *config.Config) *app {
 
 	s.authLimiter = newAuthRateLimiter(s.conf.Auth.RateLimit)
 	s.notifierTestLimiter = newSimpleRateLimiter(10, time.Minute, s.conf.Options.TrustProxy) // 10 requests per minute
+	s.speechLimiter = newSimpleRateLimiter(20, time.Minute, s.conf.Options.TrustProxy)       // 20 requests per minute
 
 	return s
 }

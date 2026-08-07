@@ -118,6 +118,48 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/actions/transcribe": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Actions"
+                ],
+                "summary": "Transcribe an audio clip to text",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Audio clip to transcribe",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.SpeechTranscription"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/validate.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/actions/wipe-inventory": {
             "post": {
                 "security": [
@@ -6360,6 +6402,9 @@ const docTemplate = `{
                 "oidc": {
                     "$ref": "#/definitions/v1.OIDCStatus"
                 },
+                "speechToText": {
+                    "type": "boolean"
+                },
                 "telemetry": {
                     "$ref": "#/definitions/v1.TelemetryStatus"
                 },
@@ -6566,6 +6611,14 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/repo.ExportOut"
                     }
+                }
+            }
+        },
+        "v1.SpeechTranscription": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
                 }
             }
         },

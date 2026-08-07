@@ -102,6 +102,25 @@ func Test_BarcodeAPIConf_RedactsToken(t *testing.T) {
 	assert.Contains(t, string(out), sentinel)
 }
 
+func Test_SpeechConf_RedactsAPIKey(t *testing.T) {
+	c := SpeechConf{BaseURL: "https://api.mistral.ai/v1", Model: "voxtral-mini-transcribe", APIKey: "speech-secret"}
+
+	out, err := json.Marshal(c)
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(out), "speech-secret")
+	assert.Contains(t, string(out), "voxtral-mini-transcribe")
+	assert.Contains(t, string(out), sentinel)
+}
+
+func Test_SpeechConf_Enabled(t *testing.T) {
+	assert.False(t, SpeechConf{}.Enabled())
+	assert.False(t, SpeechConf{BaseURL: "https://api.mistral.ai/v1"}.Enabled())
+	assert.False(t, SpeechConf{Model: "whisper-1"}.Enabled())
+	// An API key is intentionally optional (private-network servers).
+	assert.True(t, SpeechConf{BaseURL: "https://api.mistral.ai/v1", Model: "whisper-1"}.Enabled())
+}
+
 func Test_OTelConfig_RedactsHeaders(t *testing.T) {
 	c := OTelConfig{Headers: "Authorization=Bearer hunter2,X-Other=val"}
 
@@ -124,6 +143,7 @@ func Test_Config_FullMarshalRedactsAllSecrets(t *testing.T) {
 		},
 		Barcode: BarcodeAPIConf{TokenBarcodespider: "bs-secret"},
 		Otel:    OTelConfig{Headers: "Authorization=Bearer otel-secret"},
+		Speech:  SpeechConf{APIKey: "stt-secret"},
 	}
 
 	out, err := json.MarshalIndent(c, "", "  ")
@@ -138,6 +158,7 @@ func Test_Config_FullMarshalRedactsAllSecrets(t *testing.T) {
 		"pubsecret",
 		"bs-secret",
 		"otel-secret",
+		"stt-secret",
 	} {
 		assert.NotContainsf(t, string(out), secret, "expected %q to be redacted in output", secret)
 	}
