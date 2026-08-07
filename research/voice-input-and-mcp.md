@@ -19,13 +19,15 @@ Do **both, in this order**:
    SDK is stable (v1.x, streamable HTTP transport), so it can be embedded
    directly in the existing Go binary behind a config flag.
 
-2. **Then a native "voice quick-capture" mode** in the web UI, built as a
-   *pluggable OpenAI-compatible STT provider* rather than hard-wiring one
-   vendor. The same config block then covers Mistral's hosted Voxtral
-   (cheapest, $0.003/min), OpenAI (`gpt-4o-transcribe`/`whisper-1`), Groq
-   (hosted Whisper turbo), **or a fully local server** (Speaches /
-   faster-whisper-server / whisper.cpp server / self-hosted Voxtral Realtime)
-   — which matters because HomeBox's audience is self-hosters.
+2. **Then a native "voice quick-capture" mode** in the web UI, using a
+   **hosted STT API** (decision: no self-hosted model for now), integrated
+   as a *pluggable OpenAI-compatible provider* rather than hard-wiring one
+   vendor. The same config block covers Mistral's hosted Voxtral (cheapest,
+   $0.003/min — the default recommendation), OpenAI
+   (`gpt-4o-transcribe`/`whisper-1`), and Groq (hosted Whisper turbo).
+   Because every provider speaks the same interface, a local STT container
+   remains a zero-code future option for self-hosters, but is explicitly
+   out of scope for v1.
 
 The two features compose: the intent-parsing layer needed for native voice
 ("add a DeWalt drill to the garage shelf" → `EntityCreate`) is exactly the
@@ -88,44 +90,48 @@ Facts that shape the design (all paths relative to repo root):
 
 ## 2. Option A — Native voice input mode
 
-### 2.1 Which speech model (state of the art, mid-2026)
+### 2.1 Which speech API (state of the art, mid-2026)
 
-| Engine | Access | Cost | Notes |
-|---|---|---|---|
-| **Voxtral Mini Transcribe V2** (Mistral) | Hosted API | **$0.003/min** | Best price/perf of any hosted STT; ~4% WER on FLEURS; batch-style |
-| **Voxtral Realtime** (`Voxtral-Mini-4B-Realtime-2602`) | **Open weights, Apache 2.0** + API ($0.006/min) | free self-host | 4B params, runs on a single 16 GB GPU; sub-200 ms configurable latency; a Q4 quant (~2.5 GB) **runs client-side in the browser via WebGPU/WASM** |
-| **Whisper large-v3 / large-v3-turbo** (OpenAI) | Open weights (MIT) | free self-host | The incumbent; huge ecosystem (whisper.cpp, faster-whisper, Speaches); turbo ≈ 5.4× faster with modest accuracy loss; CPU-viable via whisper.cpp for short clips |
-| **`gpt-4o-transcribe` / `whisper-1`** (OpenAI hosted) | Hosted API | $0.006/min | Top accuracy in third-party tests; `gpt-4o-mini-transcribe` ≈ $0.003/min |
-| **Groq-hosted Whisper turbo** | Hosted API | ≈ $0.04/**hour** | Cheapest hosted option, ~228× real-time |
-| Web Speech API (browser) | Built-in | free | Zero-dependency baseline, but Chrome ships audio to Google (privacy mismatch with self-hosting), quality/language support is inconsistent, and Firefox support is poor. Fine as a fallback, wrong as the headline feature. |
+**Decision: hosted API only for v1 — we won't host the model ourselves.**
+That narrows the comparison to the hosted offerings:
 
-**Conclusion:** don't pick a vendor — pick the *interface*. Every serious
-option above (Mistral, OpenAI, Groq, Speaches, faster-whisper-server,
-whisper.cpp's server, vLLM serving Voxtral) speaks the **OpenAI
-`/v1/audio/transcriptions` multipart API**. HomeBox should integrate against
-that interface with a configurable base URL + model + key:
+| Provider / model | Cost | Notes |
+|---|---|---|
+| **Mistral — Voxtral Mini Transcribe V2** | **$0.003/min** | Best price/perf of any hosted STT; ~4% WER on FLEURS; strong multilingual — the recommended default |
+| **Mistral — Voxtral Realtime** | $0.006/min | Streaming, sub-200 ms latency; only needed if we ever do live dictation-as-you-speak rather than push-to-talk clips |
+| **OpenAI — `gpt-4o-transcribe` / `whisper-1`** | $0.006/min | Top accuracy in third-party tests; `gpt-4o-mini-transcribe` ≈ $0.003/min |
+| **Groq — hosted `whisper-large-v3-turbo`** | ≈ $0.04/**hour** | Cheapest hosted option, ~228× real-time; slightly behind the above on hard audio |
+| Web Speech API (browser) | free | Zero-dependency fallback only: Chrome routes audio through Google, quality/language coverage is inconsistent, Firefox support is poor |
+
+At these prices cost is a non-issue for this use case: a heavy user doing
+fifty 10-second voice captures a day is ~8.5 min/day → about **2–5 cents a
+month** on any of the $0.003–0.006/min tiers.
+
+**Conclusion:** don't pick a vendor — pick the *interface*. Mistral, OpenAI,
+and Groq all speak the **OpenAI `/v1/audio/transcriptions` multipart API**,
+so one configurable base URL + model + key covers every option (and, later,
+a self-hosted server exposing the same API, with no code change — Speaches,
+faster-whisper-server, whisper.cpp server, vLLM serving Voxtral):
 
 ```yaml
 # conf.go — new block, same shape as BarcodeAPIConf
 speech:
   enabled: true
-  base_url: https://api.mistral.ai/v1     # or http://speaches:8000/v1, https://api.openai.com/v1, …
-  model: voxtral-mini-transcribe-v2       # or whisper-1, gpt-4o-mini-transcribe, large-v3-turbo…
+  base_url: https://api.mistral.ai/v1     # or https://api.openai.com/v1, https://api.groq.com/openai/v1
+  model: voxtral-mini-transcribe-v2       # or gpt-4o-mini-transcribe, whisper-1, whisper-large-v3-turbo
   api_key: ${HBOX_SPEECH_API_KEY}         # redacted in config dump, like token_barcodespider
-  language_hint: ""                       # optional; both engines auto-detect
+  language_hint: ""                       # optional; all engines auto-detect
 ```
 
-Recommended defaults to document: **hosted = Voxtral Mini Transcribe V2**
-(cheapest, excellent multilingual — relevant given HomeBox's Weblate
-translation investment); **local = Speaches or faster-whisper-server running
-whisper large-v3-turbo** (CPU-viable for short utterances), with self-hosted
-Voxtral Realtime as the GPU option.
+Documented default: **Voxtral Mini Transcribe V2** — cheapest, accurate, and
+excellent multilingual coverage (relevant given HomeBox's Weblate
+translation investment). OpenAI and Groq are the drop-in alternates.
 
 ### 2.2 Backend: one proxy endpoint
 
 Mirror the barcode proxy. Do **not** let the browser call the STT vendor
-directly — the API key must stay server-side, and self-hosted STT containers
-won't be reachable from the user's browser anyway.
+directly — the API key must stay server-side, and routing through the
+backend keeps the provider swappable without touching the frontend.
 
 ```
 POST /api/v1/actions/transcribe        (userMW, multipart audio ≤ ~15 MB, ~60 s cap)
@@ -167,7 +173,7 @@ The intent-parse step is the design decision:
 | Approach | How | Verdict |
 |---|---|---|
 | Heuristic grammar | regex/chrono-style parse of "add|create N X to/in Y", fuzzy-match Y against `GET /entities/tree`, X against templates/types | Zero extra dependencies; works for the 80% command shape; breaks on free-form phrasing and non-English word order |
-| LLM function-call on the transcript | send transcript + location/tag/type context to a small LLM with one `create_entity` tool schema | Robust and multilingual, but adds a *second* provider config… unless the same OpenAI-compatible `base_url` serves chat too (Speaches + Ollama behind one gateway, or Mistral for both) |
+| LLM function-call on the transcript | send transcript + location/tag/type context to a small LLM with one `create_entity` tool schema | Robust and multilingual, and cheap to add given the hosted-API decision: Mistral serves both transcription and small chat models behind the same key, so no second provider is required |
 | **Voxtral audio-native function calling** | Voxtral Small/Mini (the audio-LLM, not the transcribe model) can emit function calls **directly from audio**, one round-trip, no separate NLU | Elegant, and a real Voxtral differentiator over Whisper — but locks the feature to one vendor family; keep as an optimization |
 
 Recommendation: ship Tier 2 with the heuristic parser feeding the modal
@@ -312,8 +318,8 @@ ChatGPT") is half the value — budget a day for it.
 | Audio/STT code in HomeBox | Yes (proxy + recorder UX) | **None** |
 | NLU / multi-turn repair | Ours to build (hard part) | Client's job (already great) |
 | Works on phone while standing at a shelf | Web UI mic button | Claude/ChatGPT voice apps, HA voice satellites |
-| Offline/LAN-only capable | Yes, with local STT container | Yes with local MCP clients (HA, Voice Mode + local Whisper) |
-| New external dependency | STT provider (pluggable) | Go SDK only |
+| Offline/LAN-only capable | Not in v1 (hosted STT API by decision; local server possible later, no code change) | Yes with local MCP clients (HA, Voice Mode + local Whisper) |
+| New external dependency | Hosted STT API (pluggable: Mistral/OpenAI/Groq) | Go SDK only |
 | Benefits beyond voice | Dictation | **Whole agent ecosystem**: automations, bulk edits, "what did I buy last year", Claude Code scripting |
 | Est. effort | ~1 wk (T1+T2) | ~0.5–1 wk |
 
