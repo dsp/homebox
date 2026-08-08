@@ -572,6 +572,9 @@
 
     const payload: EntityUpdate = {
       ...item.value,
+      // EntityOut carries the type as an edge; JSON.stringify drops the key
+      // again when the edge is absent, matching the previous payload.
+      entityTypeId: item.value.entityType?.id as string,
       parentId: parent.value?.id || location.value?.id || null,
       tagIds: item.value.tagIds,
       assetId: item.value.assetId,
