@@ -140,13 +140,29 @@
     includeWarrantyFields: false,
     includePurchaseFields: false,
     includeSoldFields: false,
-    fields: [] as Array<{ id: string; name: string; type: "text"; textValue: string }>,
+    fields: [] as Array<{
+      id: string;
+      name: string;
+      type: "text";
+      textValue: string;
+      booleanValue: boolean;
+      numberValue: number;
+      timeValue: string;
+    }>,
   });
 
   const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
   function addField() {
-    form.fields.push({ id: NIL_UUID, name: "", type: "text", textValue: "" });
+    form.fields.push({
+      id: NIL_UUID,
+      name: "",
+      type: "text",
+      textValue: "",
+      booleanValue: false,
+      numberValue: 0,
+      timeValue: "0001-01-01T00:00:00Z",
+    });
   }
 
   function reset() {

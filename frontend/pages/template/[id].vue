@@ -80,7 +80,15 @@
     includeWarrantyFields: false,
     includePurchaseFields: false,
     includeSoldFields: false,
-    fields: [] as Array<{ id: string; name: string; type: "text"; textValue: string }>,
+    fields: [] as Array<{
+      id: string;
+      name: string;
+      type: "text";
+      textValue: string;
+      booleanValue: boolean;
+      numberValue: number;
+      timeValue: string;
+    }>,
   });
 
   function openUpdate() {
@@ -108,6 +116,9 @@
         name: f.name,
         type: "text" as const,
         textValue: f.textValue,
+        booleanValue: f.booleanValue,
+        numberValue: f.numberValue,
+        timeValue: f.timeValue,
       })),
     });
     openDialog(DialogID.UpdateTemplate);
@@ -214,7 +225,17 @@
             type="button"
             size="sm"
             variant="outline"
-            @click="updateData.fields.push({ id: NIL_UUID, name: '', type: 'text', textValue: '' })"
+            @click="
+              updateData.fields.push({
+                id: NIL_UUID,
+                name: '',
+                type: 'text',
+                textValue: '',
+                booleanValue: false,
+                numberValue: 0,
+                timeValue: '0001-01-01T00:00:00Z',
+              })
+            "
           >
             <MdiPlus class="mr-1 size-4" />
             {{ $t("global.add") }}

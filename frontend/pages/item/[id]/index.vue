@@ -604,6 +604,9 @@
         name: field.name,
         type: "text",
         textValue: field.textValue || "",
+        booleanValue: field.booleanValue ?? false,
+        numberValue: field.numberValue ?? 0,
+        timeValue: "0001-01-01T00:00:00Z",
       })),
     };
 
