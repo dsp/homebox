@@ -190,6 +190,12 @@ func (a *app) mountRoutes(r *chi.Mux, chain *errchain.ErrChain, repos *repo.AllR
 				speechConf.Timeout = clamped
 			}
 			r.Post("/actions/transcribe", chain.ToHandlerFunc(v1Ctrl.HandleSpeechTranscribe(speechConf), append(userMW, a.speechLimiter.middlewareByUser)...))
+
+			// Voice commands ride the same provider credentials and rate
+			// limit as dictation; they only add an intent-parsing hop.
+			if speechConf.IntentEnabled() {
+				r.Post("/actions/voice-command", chain.ToHandlerFunc(v1Ctrl.HandleVoiceCommand(speechConf), append(userMW, a.speechLimiter.middlewareByUser)...))
+			}
 		} else if a.conf.Speech.BaseURL != "" || a.conf.Speech.Model != "" {
 			// Partially or invalidly configured: say why at startup instead
 			// of letting every request fail with a generic 502.
