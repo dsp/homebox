@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hay-kot/httpkit/errchain"
-	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/sysadminsmedia/homebox/backend/internal/core/services"
 	"github.com/sysadminsmedia/homebox/backend/internal/data/repo"
 	"github.com/sysadminsmedia/homebox/backend/internal/sys/validate"
@@ -117,7 +116,7 @@ func (ctrl *V1Controller) HandlerNotifierTest() errchain.HandlerFunc {
 			return nil, validate.NewRequestError(err, http.StatusBadRequest)
 		}
 
-		err := shoutrrr.Send(q.URL, "Test message from Homebox")
+		err := validate.SendGuardedNotification(&ctrl.config.Notifier, q.URL, "Test message from Homebox")
 		return nil, err
 	}
 

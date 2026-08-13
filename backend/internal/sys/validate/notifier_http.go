@@ -1,9 +1,12 @@
 package validate
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/nicholas-fedor/shoutrrr"
+	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 	"github.com/sysadminsmedia/homebox/backend/internal/sys/config"
 )
 
@@ -14,19 +17,40 @@ const maxNotifierRedirects = 10
 // InstallNotifierRedirectGuard hardens http.DefaultClient so redirects are
 // re-validated against the notifier SSRF policy on every hop.
 //
-// shoutrrr's generic service performs its HTTP request with http.DefaultClient and
-// no CheckRedirect hook, so a host that passes the initial ValidateNotifierURL gate
-// can respond with a 30x redirect to localhost / link-local / cloud-metadata / any
-// other blocked destination, and the follow-up hop is delivered without re-checking
-// the policy — bypassing the SSRF guards. Re-validating each hop closes that hole.
-//
-// This affects every http.DefaultClient consumer in the process, but in Homebox
-// that is only shoutrrr: all other outbound HTTP clients (labelmaker, analytics,
-// otel, product search, the GitHub release check) are constructed explicitly. The
-// guard only rejects redirects whose target is blocked by policy; ordinary
-// redirects to permitted hosts continue to be followed.
+// This alone is NOT sufficient: current shoutrrr constructs its own
+// http.Client per send unless one is injected, so deliveries must go through
+// SendGuardedNotification, which injects a guarded client into the sender.
+// The default-client guard stays installed as defense in depth for any code
+// path that still delivers via http.DefaultClient.
 func InstallNotifierRedirectGuard(cfg *config.NotifierConf) {
 	http.DefaultClient.CheckRedirect = NotifierRedirectGuard(cfg)
+}
+
+// NotifierHTTPClient returns the HTTP client notifier deliveries must use:
+// every redirect hop is re-validated against the SSRF policy, so a host that
+// passes the initial ValidateNotifierURL gate cannot 30x-redirect to
+// localhost / link-local / cloud-metadata / other blocked destinations.
+func NotifierHTTPClient(cfg *config.NotifierConf) *http.Client {
+	return &http.Client{
+		CheckRedirect: NotifierRedirectGuard(cfg),
+	}
+}
+
+// SendGuardedNotification delivers one notification via shoutrrr with the
+// SSRF-guarded client injected into the sender. All notifier deliveries must
+// go through this function rather than shoutrrr.Send: the package-level Send
+// uses shoutrrr's own per-send client, which follows redirects with no
+// policy re-check. Kept in this file so the policy and every enforcement
+// point stay together.
+func SendGuardedNotification(cfg *config.NotifierConf, rawURL, message string) error {
+	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{
+		HTTPClient: NotifierHTTPClient(cfg),
+	}, rawURL)
+	if err != nil {
+		return fmt.Errorf("locating notifier service: %w", err)
+	}
+
+	return errors.Join(sender.Send(message, nil)...)
 }
 
 // NotifierRedirectGuard returns an http.Client CheckRedirect hook that refuses any
