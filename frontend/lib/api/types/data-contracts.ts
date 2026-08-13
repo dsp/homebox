@@ -1336,6 +1336,7 @@ export interface APISummary {
   telemetry: TelemetryStatus;
   title: string;
   versions: string[];
+  voiceCommands: boolean;
 }
 
 export interface ActionAmountResult {
@@ -1439,6 +1440,34 @@ export interface TokenResponse {
   attachmentToken: string;
   expiresAt: Date | string;
   token: string;
+}
+
+export interface VoiceCommandRequest {
+  /** @maxLength 1000 */
+  transcript: string;
+}
+
+export interface VoiceCommandResult {
+  action: string;
+  description: string;
+  /**
+   * Location is set when the spoken location resolved to exactly one
+   * place. Otherwise LocationCandidates lists what it could have been
+   * so the UI can ask, and LocationQuery echoes what was heard.
+   */
+  location: VoiceLocationMatch;
+  locationCandidates: VoiceLocationMatch[];
+  locationQuery: string;
+  name: string;
+  quantity: number;
+  query: string;
+  transcript: string;
+}
+
+export interface VoiceLocationMatch {
+  id: string;
+  name: string;
+  path: string;
 }
 
 export interface WipeInventoryOptions {

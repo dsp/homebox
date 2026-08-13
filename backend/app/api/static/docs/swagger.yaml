@@ -2190,6 +2190,8 @@ definitions:
         items:
           type: string
         type: array
+      voiceCommands:
+        type: boolean
     type: object
   v1.ActionAmountResult:
     properties:
@@ -2342,6 +2344,51 @@ definitions:
       token:
         type: string
     type: object
+  v1.VoiceCommandRequest:
+    properties:
+      transcript:
+        maxLength: 1000
+        type: string
+    required:
+    - transcript
+    type: object
+  v1.VoiceCommandResult:
+    properties:
+      action:
+        type: string
+      description:
+        type: string
+      location:
+        allOf:
+        - $ref: '#/definitions/v1.VoiceLocationMatch'
+        description: |-
+          Location is set when the spoken location resolved to exactly one
+          place. Otherwise LocationCandidates lists what it could have been
+          so the UI can ask, and LocationQuery echoes what was heard.
+      locationCandidates:
+        items:
+          $ref: '#/definitions/v1.VoiceLocationMatch'
+        type: array
+      locationQuery:
+        type: string
+      name:
+        type: string
+      quantity:
+        type: number
+      query:
+        type: string
+      transcript:
+        type: string
+    type: object
+  v1.VoiceLocationMatch:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+    type: object
   v1.WipeInventoryOptions:
     properties:
       wipeLocations:
@@ -2465,6 +2512,33 @@ paths:
       security:
       - Bearer: []
       summary: Transcribe an audio clip to text
+      tags:
+      - Actions
+  /v1/actions/voice-command:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Transcript
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/v1.VoiceCommandRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.VoiceCommandResult'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/validate.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Interpret a spoken command into a proposed action
       tags:
       - Actions
   /v1/actions/wipe-inventory:

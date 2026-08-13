@@ -160,6 +160,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/actions/voice-command": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Actions"
+                ],
+                "summary": "Interpret a spoken command into a proposed action",
+                "parameters": [
+                    {
+                        "description": "Transcript",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/v1.VoiceCommandRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/v1.VoiceCommandResult"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/validate.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/actions/wipe-inventory": {
             "post": {
                 "security": [
@@ -6416,6 +6460,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "voiceCommands": {
+                    "type": "boolean"
                 }
             }
         },
@@ -6640,6 +6687,72 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.VoiceCommandRequest": {
+            "type": "object",
+            "required": [
+                "transcript"
+            ],
+            "properties": {
+                "transcript": {
+                    "type": "string",
+                    "maxLength": 1000
+                }
+            }
+        },
+        "v1.VoiceCommandResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "location": {
+                    "description": "Location is set when the spoken location resolved to exactly one\nplace. Otherwise LocationCandidates lists what it could have been\nso the UI can ask, and LocationQuery echoes what was heard.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/v1.VoiceLocationMatch"
+                        }
+                    ]
+                },
+                "locationCandidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.VoiceLocationMatch"
+                    }
+                },
+                "locationQuery": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "query": {
+                    "type": "string"
+                },
+                "transcript": {
+                    "type": "string"
+                }
+            }
+        },
+        "v1.VoiceLocationMatch": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
                     "type": "string"
                 }
             }

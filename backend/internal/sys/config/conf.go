@@ -164,8 +164,14 @@ type SpeechConf struct {
 	APIKey string `yaml:"api_key" conf:"mask"`
 	// Language optionally pins transcription to an ISO-639-1 code. Leave
 	// empty to let the model auto-detect.
-	Language string        `yaml:"language"`
-	Timeout  time.Duration `yaml:"timeout"  conf:"default:30s"`
+	Language string `yaml:"language"`
+	// IntentModel optionally enables voice commands ("add two batteries to
+	// the garage shelf") on top of plain dictation. It names a chat model
+	// with function-calling support at the same provider, e.g.
+	// mistral-small-latest or gpt-4o-mini. Leave empty to keep voice input
+	// dictation-only.
+	IntentModel string        `yaml:"intent_model"`
+	Timeout     time.Duration `yaml:"timeout"      conf:"default:30s"`
 }
 
 // Enabled reports whether the transcription proxy should be mounted. An API
@@ -181,10 +187,28 @@ func (c SpeechConf) Enabled() bool {
 	return err == nil
 }
 
+// IntentEnabled reports whether voice commands (transcript to a proposed
+// action) should be mounted. It requires transcription to work plus a chat
+// model to parse intent with.
+func (c SpeechConf) IntentEnabled() bool {
+	return c.Enabled() && c.IntentModel != ""
+}
+
+// ChatEndpointURL returns the OpenAI-compatible chat-completions endpoint at
+// the same provider, used for voice-command intent parsing.
+func (c SpeechConf) ChatEndpointURL() (string, error) {
+	return c.providerURL("chat", "completions")
+}
+
 // EndpointURL validates the configured base URL and returns the full
 // OpenAI-compatible transcription endpoint. Validation lives here, next to
 // the config, so it can run once at startup instead of failing per request.
 func (c SpeechConf) EndpointURL() (string, error) {
+	return c.providerURL("audio", "transcriptions")
+}
+
+// providerURL validates base_url once and joins the given path segments.
+func (c SpeechConf) providerURL(segments ...string) (string, error) {
 	u, err := url.Parse(strings.TrimRight(c.BaseURL, "/"))
 	if err != nil {
 		return "", fmt.Errorf("invalid speech base_url: %w", err)
@@ -202,7 +226,7 @@ func (c SpeechConf) EndpointURL() (string, error) {
 	if u.RawQuery != "" || u.Fragment != "" {
 		return "", errors.New("speech base_url must not contain a query string or fragment")
 	}
-	return u.JoinPath("audio", "transcriptions").String(), nil
+	return u.JoinPath(segments...).String(), nil
 }
 
 func (c SpeechConf) MarshalJSON() ([]byte, error) {
