@@ -44,6 +44,22 @@ const (
 	VoiceActionUnknown = "unknown"
 )
 
+// JSON-schema vocabulary for the tool definitions handed to the intent
+// model. Named so the schema below reads as structure rather than a wall of
+// repeated string literals.
+const (
+	schemaKeyType        = "type"
+	schemaKeyDescription = "description"
+	schemaTypeObject     = "object"
+	schemaTypeString     = "string"
+	schemaTypeNumber     = "number"
+)
+
+// schemaField describes one tool parameter.
+func schemaField(kind, description string) map[string]any {
+	return map[string]any{schemaKeyType: kind, schemaKeyDescription: description}
+}
+
 type (
 	// VoiceCommandRequest carries the transcript to interpret.
 	VoiceCommandRequest struct {
@@ -325,31 +341,31 @@ func parseVoiceIntent(ctx context.Context, conf config.SpeechConf, transcript st
 func voiceTools() []map[string]any {
 	return []map[string]any{
 		{
-			"type": "function",
+			schemaKeyType: "function",
 			"function": map[string]any{
-				"name":        VoiceActionCreate,
-				"description": "Add an item to the inventory. Example: 'add two spare AA batteries to the garage shelf'.",
+				"name":               VoiceActionCreate,
+				schemaKeyDescription: "Add an item to the inventory. Example: 'add two spare AA batteries to the garage shelf'.",
 				"parameters": map[string]any{
-					"type": "object",
+					schemaKeyType: schemaTypeObject,
 					"properties": map[string]any{
-						"name":        map[string]any{"type": "string", "description": "Name of the item"},
-						"quantity":    map[string]any{"type": "number", "description": "How many, defaults to 1"},
-						"location":    map[string]any{"type": "string", "description": "Location name exactly as spoken"},
-						"description": map[string]any{"type": "string", "description": "Any extra detail mentioned"},
+						"name":               schemaField(schemaTypeString, "Name of the item"),
+						"quantity":           schemaField(schemaTypeNumber, "How many, defaults to 1"),
+						"location":           schemaField(schemaTypeString, "Location name exactly as spoken"),
+						schemaKeyDescription: schemaField(schemaTypeString, "Any extra detail mentioned"),
 					},
 					"required": []string{"name"},
 				},
 			},
 		},
 		{
-			"type": "function",
+			schemaKeyType: "function",
 			"function": map[string]any{
-				"name":        VoiceActionSearch,
-				"description": "Find items already in the inventory. Example: 'where is my passport'.",
+				"name":               VoiceActionSearch,
+				schemaKeyDescription: "Find items already in the inventory. Example: 'where is my passport'.",
 				"parameters": map[string]any{
-					"type": "object",
+					schemaKeyType: schemaTypeObject,
 					"properties": map[string]any{
-						"query": map[string]any{"type": "string", "description": "What to search for"},
+						"query": schemaField(schemaTypeString, "What to search for"),
 					},
 					"required": []string{"query"},
 				},
