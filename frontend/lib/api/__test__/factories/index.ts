@@ -39,12 +39,12 @@ function user(): UserRegistration {
   };
 }
 
-function location(parentId: string | null = null): Partial<EntityCreate> & { name: string; description: string } {
+function location(parentId: string | null = null): EntityCreate {
   return {
     parentId,
     name: faker.location.city(),
     description: faker.lorem.sentence(),
-  };
+  } as EntityCreate;
 }
 
 function tag(): TagCreate {
@@ -52,6 +52,7 @@ function tag(): TagCreate {
     name: faker.lorem.word(),
     description: faker.lorem.sentence(),
     color: faker.color.rgb(),
+    icon: "",
   };
 }
 

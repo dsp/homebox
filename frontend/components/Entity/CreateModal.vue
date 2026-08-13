@@ -638,7 +638,7 @@
       const templateRequest = {
         name: form.name,
         description: form.description,
-        parentId: form.location.id as string,
+        parentId: form.location?.id as string,
         tagIds: form.tags,
         quantity: form.quantity,
         entityTypeId: selectedEntityType.value?.id || "",
@@ -650,7 +650,7 @@
     } else {
       // Normal item creation without template
       const out: EntityCreate = {
-        parentId: form.parentId || (form.location.id as string),
+        parentId: form.parentId || (form.location?.id as string),
         name: form.name,
         quantity: form.quantity,
         description: form.description,
