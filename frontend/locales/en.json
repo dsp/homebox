@@ -121,6 +121,16 @@
             "min_length": "min {min}",
             "password": {
                 "toggle_show": "Toggle Password Show"
+            },
+            "voice": {
+                "start_tooltip": "Start voice dictation",
+                "stop_tooltip": "Stop recording",
+                "toast": {
+                    "empty_recording": "Nothing was recorded",
+                    "mic_unavailable": "Microphone is unavailable",
+                    "permission_denied": "Microphone access was denied",
+                    "transcribe_failed": "Could not transcribe the recording"
+                }
             }
         },
         "global": {

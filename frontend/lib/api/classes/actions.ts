@@ -1,7 +1,17 @@
 import { BaseAPI, route } from "../base";
-import type { ActionAmountResult } from "../types/data-contracts";
+import type { ActionAmountResult, SpeechTranscription } from "../types/data-contracts";
 
 export class ActionsAPI extends BaseAPI {
+  transcribe(clip: Blob, filename: string) {
+    const formData = new FormData();
+    formData.append("file", clip, filename);
+
+    return this.http.post<FormData, SpeechTranscription>({
+      url: route("/actions/transcribe"),
+      data: formData,
+    });
+  }
+
   ensureAssetIDs() {
     return this.http.post<void, ActionAmountResult>({
       url: route("/actions/ensure-asset-ids"),

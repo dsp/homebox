@@ -46,6 +46,7 @@
               </TooltipContent>
             </Tooltip>
           </ButtonGroup>
+          <VoiceDictationButton :disabled="loading" @text="applyDictation" />
         </TooltipProvider>
       </div>
     </template>
@@ -254,6 +255,8 @@
   import LocationSelector from "~/components/Location/Selector.vue";
   import FormTextField from "~/components/Form/TextField.vue";
   import FormTextArea from "~/components/Form/TextArea.vue";
+  import VoiceDictationButton from "~/components/Form/VoiceDictationButton.vue";
+  import { truncateUtf8 } from "@/lib/utils";
   import PhotoUploader from "~/components/Form/PhotoUploader.vue";
   import PhotoUploaderPreview from "~/components/Form/PhotoUploaderPreview.vue";
   import {
@@ -739,5 +742,22 @@
 
   function openBarcodeDialog() {
     openDialog(DialogID.ProductImport);
+  }
+
+  // Voice dictation drafts the entry, the user reviews before creating: the
+  // first capture fills the empty name, later captures grow the description.
+  // Truncation is by UTF-8 bytes to match the backend's MaxLen validation.
+  function applyDictation(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    if (!form.name.trim()) {
+      form.name = truncateUtf8(trimmed, 255);
+      return;
+    }
+
+    form.description = truncateUtf8(form.description ? `${form.description.trimEnd()}\n${trimmed}` : trimmed, 1000);
   }
 </script>

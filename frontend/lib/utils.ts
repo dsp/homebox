@@ -101,3 +101,26 @@ const utf8Encoder = new TextEncoder();
 export function utf8Length(str: string): number {
   return utf8Encoder.encode(str).length;
 }
+
+/**
+ * Truncates a string to at most maxBytes of UTF-8, never splitting a code
+ * point. Pairs with utf8Length: the backend validates by encoded byte
+ * length, so String.prototype.slice (UTF-16 code units) over-shoots for
+ * multi-byte text and can cut a surrogate pair in half.
+ */
+export function truncateUtf8(str: string, maxBytes: number): string {
+  if (utf8Length(str) <= maxBytes) {
+    return str;
+  }
+
+  let result = "";
+  let bytes = 0;
+  for (const ch of str) {
+    bytes += utf8Encoder.encode(ch).length;
+    if (bytes > maxBytes) {
+      break;
+    }
+    result += ch;
+  }
+  return result;
+}
