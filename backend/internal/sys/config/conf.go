@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ardanlabs/conf/v3"
@@ -62,6 +63,7 @@ type Config struct {
 	Otel       OTelConfig     `yaml:"otel"`
 	Auth       AuthConfig     `yaml:"auth"`
 	Notifier   NotifierConf   `yaml:"notifier"`
+	Speech     SpeechConf     `yaml:"speech"`
 }
 
 type Options struct {
@@ -145,6 +147,71 @@ func (c OIDCConf) MarshalJSON() ([]byte, error) {
 	if a.ClientSecret != "" {
 		a.ClientSecret = redactedValue
 	}
+	return json.Marshal(a)
+}
+
+// SpeechConf configures the hosted speech-to-text provider behind the voice
+// input feature. Any provider exposing an OpenAI-compatible
+// `/audio/transcriptions` endpoint works (Mistral/Voxtral, OpenAI, Groq).
+// The feature is off unless both base_url and model are set.
+type SpeechConf struct {
+	// BaseURL is the provider's API root, e.g. https://api.mistral.ai/v1.
+	// The `/audio/transcriptions` path is appended by the server.
+	BaseURL string `yaml:"base_url"`
+	// Model is the provider's transcription model identifier, e.g.
+	// voxtral-mini-transcribe or whisper-1.
+	Model  string `yaml:"model"`
+	APIKey string `yaml:"api_key" conf:"mask"`
+	// Language optionally pins transcription to an ISO-639-1 code. Leave
+	// empty to let the model auto-detect.
+	Language string        `yaml:"language"`
+	Timeout  time.Duration `yaml:"timeout"  conf:"default:30s"`
+}
+
+// Enabled reports whether the transcription proxy should be mounted. An API
+// key is deliberately not required: OpenAI-compatible servers on a private
+// network may run without authentication. A configured-but-invalid base URL
+// counts as disabled so /v1/status never advertises a feature that cannot
+// work — mountRoutes logs the reason at startup.
+func (c SpeechConf) Enabled() bool {
+	if c.BaseURL == "" || c.Model == "" {
+		return false
+	}
+	_, err := c.EndpointURL()
+	return err == nil
+}
+
+// EndpointURL validates the configured base URL and returns the full
+// OpenAI-compatible transcription endpoint. Validation lives here, next to
+// the config, so it can run once at startup instead of failing per request.
+func (c SpeechConf) EndpointURL() (string, error) {
+	u, err := url.Parse(strings.TrimRight(c.BaseURL, "/"))
+	if err != nil {
+		return "", fmt.Errorf("invalid speech base_url: %w", err)
+	}
+	// Plain http stays allowed on purpose: an OpenAI-compatible server on a
+	// private network (or a local gateway) commonly has no TLS.
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("speech base_url must use http or https, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return "", errors.New("speech base_url is missing a host")
+	}
+	// Naive string concatenation would splice the path into the query, so a
+	// query or fragment silently misroutes every request. Reject instead.
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", errors.New("speech base_url must not contain a query string or fragment")
+	}
+	return u.JoinPath("audio", "transcriptions").String(), nil
+}
+
+func (c SpeechConf) MarshalJSON() ([]byte, error) {
+	type alias SpeechConf
+	a := alias(c)
+	if a.APIKey != "" {
+		a.APIKey = redactedValue
+	}
+	a.BaseURL = redactURLUserinfo(a.BaseURL)
 	return json.Marshal(a)
 }
 

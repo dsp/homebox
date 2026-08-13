@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hay-kot/httpkit/errchain"
+	"github.com/rs/zerolog/log"
 	httpSwagger "github.com/swaggo/http-swagger/v2" // http-swagger middleware
 	"github.com/sysadminsmedia/homebox/backend/app/api/handlers/debughandlers"
 	v1 "github.com/sysadminsmedia/homebox/backend/app/api/handlers/v1"
@@ -168,6 +170,34 @@ func (a *app) mountRoutes(r *chi.Mux, chain *errchain.ErrChain, repos *repo.AllR
 		r.Post("/actions/set-primary-photos", chain.ToHandlerFunc(v1Ctrl.HandleSetPrimaryPhotos(), userMW...))
 		r.Post("/actions/create-missing-thumbnails", chain.ToHandlerFunc(v1Ctrl.HandleCreateMissingThumbnails(), userMW...))
 		r.Post("/actions/wipe-inventory", chain.ToHandlerFunc(v1Ctrl.HandleWipeInventory(), userMW...))
+
+		if a.conf.Speech.Enabled() {
+			speechConf := a.conf.Speech
+			// The provider round-trip happens inside the handler, and the
+			// server's write deadline is armed before the handler runs — a
+			// provider timeout at or above the write timeout would produce a
+			// transcription the response can no longer be written for.
+			if wt := a.conf.Web.WriteTimeout; wt > 0 && speechConf.Timeout >= wt {
+				clamped := wt - time.Second
+				if clamped < time.Second {
+					clamped = time.Second
+				}
+				log.Warn().
+					Dur("speech_timeout", speechConf.Timeout).
+					Dur("web_write_timeout", wt).
+					Dur("effective_timeout", clamped).
+					Msg("speech timeout exceeds web.write_timeout; clamping — raise HBOX_WEB_WRITE_TIMEOUT to allow slower providers")
+				speechConf.Timeout = clamped
+			}
+			r.Post("/actions/transcribe", chain.ToHandlerFunc(v1Ctrl.HandleSpeechTranscribe(speechConf), append(userMW, a.speechLimiter.middlewareByUser)...))
+		} else if a.conf.Speech.BaseURL != "" || a.conf.Speech.Model != "" {
+			// Partially or invalidly configured: say why at startup instead
+			// of letting every request fail with a generic 502.
+			_, urlErr := a.conf.Speech.EndpointURL()
+			log.Warn().AnErr("base_url_error", urlErr).
+				Bool("model_set", a.conf.Speech.Model != "").
+				Msg("speech transcription is configured but invalid; voice input stays disabled")
+		}
 
 		// Tags endpoints
 		r.Get("/tags", chain.ToHandlerFunc(v1Ctrl.HandleTagsGetAll(), userMW...))

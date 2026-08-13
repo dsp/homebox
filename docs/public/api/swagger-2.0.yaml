@@ -2180,6 +2180,8 @@ definitions:
         type: string
       oidc:
         $ref: '#/definitions/v1.OIDCStatus'
+      speechToText:
+        type: boolean
       telemetry:
         $ref: '#/definitions/v1.TelemetryStatus'
       title:
@@ -2321,6 +2323,11 @@ definitions:
           $ref: '#/definitions/repo.ExportOut'
         type: array
     type: object
+  v1.SpeechTranscription:
+    properties:
+      text:
+        type: string
+    type: object
   v1.TelemetryStatus:
     properties:
       enabled:
@@ -2432,6 +2439,32 @@ paths:
       security:
       - Bearer: []
       summary: Set Primary Photos
+      tags:
+      - Actions
+  /v1/actions/transcribe:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Audio clip to transcribe
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SpeechTranscription'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/validate.ErrorResponse'
+      security:
+      - Bearer: []
+      summary: Transcribe an audio clip to text
       tags:
       - Actions
   /v1/actions/wipe-inventory:
